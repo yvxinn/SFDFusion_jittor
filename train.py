@@ -172,7 +172,7 @@ def train(cfg_path, wb_key):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default='configs/cfg.yaml', help='config file path')
-    parser.add_argument('--auth', default='', help='wandb auth api key')
+    parser.add_argument('--auth', default='9f7cff4767e982880d4259c5134e17aa9e91b530', help='wandb auth api key')
     args = parser.parse_args()
     train(args.cfg, args.auth)
     # 运行命令行代码

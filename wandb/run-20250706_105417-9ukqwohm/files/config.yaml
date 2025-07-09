@@ -1,0 +1,97 @@
+wandb_version: 1
+
+dataset_root:
+  desc: null
+  value: ./RoadScene
+dataset_name:
+  desc: null
+  value: RoadScene
+seed:
+  desc: null
+  value: 3407
+have_seg_label:
+  desc: null
+  value: false
+project_name:
+  desc: null
+  value: SFDFusion
+exp_name:
+  desc: null
+  value: model-test-0
+resume:
+  desc: null
+  value: null
+img_size:
+  desc: null
+  value: 320
+log_level:
+  desc: null
+  value: INFO
+wandb_mode:
+  desc: null
+  value: online
+start_epoch:
+  desc: null
+  value: 0
+num_epochs:
+  desc: null
+  value: 5
+epoch_gap:
+  desc: null
+  value: 1
+batch_size:
+  desc: null
+  value: 4
+num_workers:
+  desc: null
+  value: 0
+lr_i:
+  desc: null
+  value: 0.0005
+lr_f:
+  desc: null
+  value: 0.1
+momentum:
+  desc: null
+  value: 0.937
+coeff_content:
+  desc: null
+  value: 1
+coeff_ssim:
+  desc: null
+  value: 1
+coeff_saliency:
+  desc: null
+  value: 10
+coeff_fre:
+  desc: null
+  value: 1
+_wandb:
+  desc: null
+  value:
+    python_version: 3.10.18
+    cli_version: 0.17.4
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1751770457
+    t:
+      1:
+      - 1
+      - 41
+      - 55
+      - 79
+      2:
+      - 1
+      - 41
+      - 55
+      - 79
+      3:
+      - 13
+      - 16
+      - 23
+      4: 3.10.18
+      5: 0.17.4
+      8:
+      - 5
+      13: linux-x86_64

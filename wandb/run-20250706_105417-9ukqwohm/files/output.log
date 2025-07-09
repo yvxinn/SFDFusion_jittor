@@ -1,0 +1,29 @@
+2025-07-06 10:54:29,764 | dataset.py[line:141] | INFO | load 177 images
+2025-07-06 10:54:29,764 | dataset.py[line:25] | INFO | find no mask cache in folder, start saliency detection
+2025-07-06 10:54:29,765 | saliency.py[line:22] | INFO | deploy u2net on device cuda
+2025-07-06 10:54:30,001 | saliency.py[line:51] | INFO | load 0 images from RoadScene/ir
+0it [00:00, ?it/s]
+2025-07-06 10:54:30,003 | train.py[line:90] | INFO | Start training...
+  0%|                                                    | 0/45 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/wyx/projects/SFDFusion/train.py", line 177, in <module>
+    train(args.cfg, args.auth)
+  File "/home/wyx/projects/SFDFusion/train.py", line 102, in train
+    for data_ir, data_vi, mask, _ in iter:
+  File "/home/wyx/miniconda3/envs/SFD/lib/python3.10/site-packages/tqdm/std.py", line 1178, in __iter__
+    for obj in iterable:
+  File "/home/wyx/miniconda3/envs/SFD/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 630, in __next__
+    data = self._next_data()
+  File "/home/wyx/miniconda3/envs/SFD/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 674, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/wyx/miniconda3/envs/SFD/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 51, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/wyx/miniconda3/envs/SFD/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 51, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/wyx/projects/SFDFusion/dataset.py", line 165, in __getitem__
+    mask = img_read(os.path.join(self.mask_path, img_name), mode='L')
+  File "/home/wyx/projects/SFDFusion/utils/img_read.py", line 17, in img_read
+    img = np.asarray(Image.open(path).convert(mode), dtype=np.float32)
+  File "/home/wyx/.local/lib/python3.10/site-packages/PIL/Image.py", line 3513, in open
+    fp = builtins.open(filename, "rb")
+FileNotFoundError: [Errno 2] No such file or directory: 'RoadScene/mask/FLIR_00018.jpg'

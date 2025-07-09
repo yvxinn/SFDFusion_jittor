@@ -1,0 +1,55 @@
+2025-07-06 11:00:32,103 | dataset.py[line:141] | INFO | load 177 images
+2025-07-06 11:00:32,104 | dataset.py[line:25] | INFO | find no mask cache in folder, start saliency detection
+2025-07-06 11:00:32,104 | saliency.py[line:22] | INFO | deploy u2net on device cuda
+2025-07-06 11:00:32,430 | saliency.py[line:51] | INFO | load 221 images from RoadScene/ir
+generate mask for FLIR_00006.jpg to RoadScene/mask:   0%|                | 0/221 [00:00<?, ?it/s]/home/wyx/miniconda3/envs/SFD/lib/python3.10/site-packages/torchvision/transforms/functional.py:1603: UserWarning: The default value of the antialias parameter of all the resizing transforms (Resize(), RandomResizedCrop(), etc.) will change from None to True in v0.17, in order to be consistent across the PIL and Tensor backends. To suppress this warning, directly pass antialias=True (recommended, future default), antialias=None (current default, which means False for Tensors and True for PIL), or antialias=False (only works on Tensors - PIL will still use antialiasing). This also applies if you are using the inference transforms from the models weights: update the call to weights.transforms(antialias=True).
+  warnings.warn(
+/home/wyx/miniconda3/envs/SFD/lib/python3.10/site-packages/torch/nn/functional.py:3769: UserWarning: nn.functional.upsample is deprecated. Use nn.functional.interpolate instead.
+  warnings.warn("nn.functional.upsample is deprecated. Use nn.functional.interpolate instead.")
+
+
+
+
+
+
+
+
+
+generate mask for FLIR_video_04215.jpg to RoadScene/mask: 100%|█| 221/221 [00:26<00:00,  8.23it/s
+2025-07-06 11:00:59,302 | train.py[line:90] | INFO | Start training...
+
+
+
+
+Epoch 1/5: 100%|███████████████| 45/45 [00:11<00:00,  4.01it/s, total_loss=4.59]
+2025-07-06 11:01:10,519 | train.py[line:144] | INFO | Epoch 1/5, lr:0.00041000000000000005, total_loss: 5.650150113635593, content_loss: 2.890661533673604, ssim_loss: 0.48303396238221064, saliency_loss: 0.15020687762233947, fre_loss: 0.7743858748012119
+2025-07-06 11:01:10,520 | train.py[line:164] | INFO | Save checkpoint to models/model-test-0.pth
+Epoch 2/5:   9%|█▍              | 4/45 [00:00<00:07,  5.23it/s, total_loss=4.41]
+
+
+
+Epoch 2/5: 100%|███████████████| 45/45 [00:07<00:00,  5.71it/s, total_loss=4.31]
+2025-07-06 11:01:18,444 | train.py[line:144] | INFO | Epoch 2/5, lr:0.00032, total_loss: 4.663767851723565, content_loss: 2.415064247449239, ssim_loss: 0.4098565565215217, saliency_loss: 0.10725537919335895, fre_loss: 0.7662932660844591
+2025-07-06 11:01:18,444 | train.py[line:164] | INFO | Save checkpoint to models/model-test-0.pth
+Epoch 3/5:  11%|█▊              | 5/45 [00:00<00:07,  5.57it/s, total_loss=3.88]
+
+
+
+Epoch 3/5: 100%|███████████████| 45/45 [00:08<00:00,  5.51it/s, total_loss=4.14]
+2025-07-06 11:01:26,667 | train.py[line:144] | INFO | Epoch 3/5, lr:0.00023000000000000003, total_loss: 4.335548957188924, content_loss: 2.215895326932271, ssim_loss: 0.37451761033799913, saliency_loss: 0.09844126403331757, fre_loss: 0.7607233908441332
+2025-07-06 11:01:26,669 | train.py[line:164] | INFO | Save checkpoint to models/model-test-0.pth
+Epoch 4/5:   9%|█▌               | 4/45 [00:00<00:07,  5.44it/s, total_loss=3.8]
+
+
+
+Epoch 4/5: 100%|██████████████████| 45/45 [00:07<00:00,  5.86it/s, total_loss=4]
+2025-07-06 11:01:34,400 | train.py[line:144] | INFO | Epoch 4/5, lr:0.00014, total_loss: 4.102808056937324, content_loss: 2.063993117544386, ssim_loss: 0.3551530417468813, saliency_loss: 0.09268455728888511, fre_loss: 0.7568163606855605
+2025-07-06 11:01:34,403 | train.py[line:164] | INFO | Save checkpoint to models/model-test-0.pth
+Epoch 5/5:  13%|██▏             | 6/45 [00:01<00:07,  5.46it/s, total_loss=2.56]
+
+
+
+Epoch 5/5: 100%|███████████████| 45/45 [00:07<00:00,  5.83it/s, total_loss=3.94]
+2025-07-06 11:01:42,171 | train.py[line:144] | INFO | Epoch 5/5, lr:5e-05, total_loss: 3.998233535554674, content_loss: 1.9657993343141344, ssim_loss: 0.34661668439706167, saliency_loss: 0.09320533714360661, fre_loss: 0.7537641631232368
+2025-07-06 11:01:42,172 | train.py[line:164] | INFO | Save checkpoint to models/model-test-0.pth
+************************************************************	epoch finished!

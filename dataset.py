@@ -24,7 +24,7 @@ def check_mask(root: Path, img_list, config: ConfigDict):
     else:
         logging.info('find no mask cache in folder, start saliency detection')
         saliency = Saliency()
-        saliency.inference(src=root / 'ir', dst=root / 'mask', suffix='png')
+        saliency.inference(src=root / 'ir', dst=root / 'mask', suffix='jpg')
 
 
 class M3FD(Dataset):
