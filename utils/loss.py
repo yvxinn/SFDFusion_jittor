@@ -83,75 +83,49 @@ def cal_saliency_loss(fus, ir, vi, mask):
     return 5 * loss_tar + loss_back
 
 def cc(img1, img2):
-    """
-    相关系数函数。
-    注意: 此函数虽然被保留，但在最终的 FrequencyLoss 中并未被使用，
-    因为它对浮点数误差过于敏感，不适合用于跨框架的稳定损失计算。
-    """
-    eps=1e-7
-    N,C,H,W=img1.shape
-    f1=f1.reshape(N,C,-1)
-    f2=f2.reshape(N,C,-1)
-    f1=f1 - f1.mean(dim=-1, keepdims=True)
-    f2=f2 - f2.mean(dim=-1, keepdims=True)
-    num=jt.sum(f1*f2, dim=-1)
-    den=jt.sqrt(jt.sum(f1**2, dim=-1))*jt.sqrt(jt.sum(f2**2, dim=-1))
-    return jt.clamp((num/(eps+den)), -1.0, 1.0).mean()
+    eps = 1e-7
+    N, C, H, W = img1.shape
+    img1 = img1.reshape(N, C, -1)
+    img2 = img2.reshape(N, C, -1)
+    img1 = img1 - img1.mean(dim=-1, keepdims=True)
+    img2 = img2 - img2.mean(dim=-1, keepdims=True)
+    num = jt.sum(img1 * img2, dim=-1)
+    den = jt.sqrt(jt.sum(img1**2, dim=-1)) * jt.sqrt(jt.sum(img2**2, dim=-1))
+    return jt.clamp(num / (eps + den), -1.0, 1.0).mean()
 
 # --- 核心修正 2 & 3: 重构频率损失函数 ---
 def cal_fre_loss(amp, pha, ir, vi, mask):
-    """
-    频率损失函数。
-    此函数经过了重大重构，以解决 Jittor 中缺失高级 `irfft` 函数的问题，
-    并提升数值稳定性。
-    """
-    # 1. 从振幅和相位重建复数张量的实部和虚部
-    real = amp * jt.cos(pha) + 1e-8
-    imag = amp * jt.sin(pha) + 1e-8
-    
-    # 2. 将实部和虚部堆叠成 Jittor 的复数表示形式
-    #    输入 shape: [B, C, H, W_half] -> 输出 shape: [B, C, H, W_half, 2]
-    x_complex_half = jt.stack([real, imag], dim=-1)
-    
-    N, C, H, W_half, _ = x_complex_half.shape
-    W = ir.shape[-1] # 目标图像的完整宽度, e.g., 64
+    real = amp * jt.cos(pha)
+    imag = amp * jt.sin(pha)
 
-    # --- 手动实现 irfft 逻辑 ---
-    # 原因: Jittor 当前版本无直接的 irfftn 函数，需手动模拟。
-    # 3. 创建一个用于填充的、完整的复数频谱张量
+    # 构建 [N, C, H, W_half, 2]
+    half_spec = jt.stack([real, imag], dim=-1)
+    N, C, H, W_half, _ = half_spec.shape
+    W = (W_half - 1) * 2
+
+    # 初始化全频谱
     full_spec = jt.zeros((N, C, H, W, 2), dtype='float32')
-    
-    # 3a. 将输入的半谱直接复制到全谱的前半部分
-    full_spec[:, :, :, 0:W_half, :] = x_complex_half
+    full_spec[:, :, :, :W_half, :] = half_spec
 
-    # 3b. 根据厄米共轭对称性，构建全谱的后半部分
-    #     取半谱中除直流分量(0)和奈奎斯特频率(W_half-1)外的部分
-    conj_part = x_complex_half[:, :, :, 1:W_half-1, :].clone()
-    conj_part[..., 1] *= -1 # 取共轭（虚部取反）
-    
-    #     沿宽度维度翻转。jt.flip 的 `dim` 参数为整数。
-    conj_part_flipped = jt.flip(conj_part, dim=3)
-    
-    #     将翻转后的共轭部分填入全谱的后半部分
-    full_spec[:, :, :, W_half:, :] = conj_part_flipped
+    # 构造对称部分（注意排除 idx=0 和 idx=W_half-1）
+    if W_half > 2:
+        sym = half_spec[:, :, :, 1:W_half-1, :].clone()
+        sym[..., 1] *= -1  # 虚部取负为共轭
+        sym = jt.flip(sym, dim=3)
+        full_spec[:, :, :, W_half:, :] = sym  # ✅ 修正点：从 W_half 开始，空间刚好对齐
 
-    # 4. 调用通用的复数到复数逆傅里叶变换
-    full_spec_reshaped = full_spec.reshape(N * C, H, W, 2)
-    x_ifft_full = nn._fft2(full_spec_reshaped, inverse=True)
-    
-    # 5. 从复数结果中提取实部
-    x = x_ifft_full.reshape(N, C, H, W, 2)[..., 0]
-    
-    # 6. 手动进行归一化
-    # 原因: PyTorch 的 fft/ifft 实现通常包含归一化因子。为匹配其尺度，需手动除以像素总数。
-    x = x / (H * W)
-    x = jt.abs(x)
 
-    # --- 替换数值不稳定的 cc 函数 ---
-    # 7. 计算损失
-    # 原因: cc 函数对浮点数误差极其敏感，会导致跨框架的巨大差异。
-    #      改用更稳健的 L1 Loss，虽然在数学上不等价，但在逻辑上等价
-    #      （都是衡量重建图像与目标图像的差距），且能保证模型稳定收敛。
-    x_max = jt.maximum(ir, vi)
-    res = manual_l1_loss(x, x_max)
-    return res
+    # 保留 W_half-1（Nyquist 分量）不变（实部有值，虚部为0）
+    # 由于对称性，full_spec[:, :, :, W_half, :] == conj(half_spec[:, :, :, W_half, :])
+
+    # 重建图像
+    full_spec_reshape = full_spec.reshape((-1, H, W, 2))
+    x_ifft = nn._fft2(full_spec_reshape, inverse=True)
+    x_ifft = x_ifft.reshape(N, C, H, W, 2)[..., 0]
+    x_ifft = x_ifft / (H * W)
+    x_ifft = jt.abs(x_ifft)
+
+    # 计算 CC
+    loss_ir = cc(x_ifft * mask, ir * mask)
+    loss_vi = cc(x_ifft * (1 - mask), vi * (1 - mask))
+    return loss_ir + loss_vi
