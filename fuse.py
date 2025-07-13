@@ -12,7 +12,7 @@ import yaml # 导入YAML配置文件解析库
 from configs import from_dict # 导入配置字典转换函数
 import dataset # 导入数据集处理模块
 from torch.utils.data import DataLoader # 导入PyTorch数据加载器
-from thop import profile, clever_format # 导入模型复杂度分析工具
+# from thop import profile, clever_format # 导入模型复杂度分析工具 (移除，因为依赖 PyTorch)
 import time # 导入时间计算模块
 import cv2 # 导入OpenCV图像处理库
 import argparse # 导入命令行参数解析模块

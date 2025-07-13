@@ -1,8 +1,8 @@
-dataset_root: ./RoadScene
+dataset_root: /home/wyx/projects/SFDFusion_jittor/RoadScene
 dataset_name: RoadScene
 seed: 3407
 have_seg_label: False
-project_name: SFDFusion
+project_name: SFDFusion_jittor
 exp_name: model-test-0
 resume: ~
 img_size: 320

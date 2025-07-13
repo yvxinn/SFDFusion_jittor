@@ -13,7 +13,7 @@ import yaml
 from configs import from_dict
 import dataset
 from torch.utils.data import DataLoader
-from thop import profile, clever_format
+# from thop import profile, clever_format # 移除，因为依赖 PyTorch
 import time
 import cv2
 
