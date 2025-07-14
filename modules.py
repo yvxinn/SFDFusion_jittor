@@ -1,5 +1,3 @@
-# 文件: SFDFusion_jittor/modules.py (已修正)
-
 import jittor as jt
 import jittor.nn as nn
 import numpy as np

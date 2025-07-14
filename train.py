@@ -3,46 +3,100 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import random
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from modules import *
-from utils.loss import *
-from utils.get_params_group import get_param_groups
-import kornia
-from kornia.metrics import AverageMeter
-from configs import *
+import jittor as jt
+import jittor.nn as nn
+from jittor.dataset import DataLoader
+from .modules import *
+from .utils.loss import *
+from .utils.get_params_group import get_param_groups
+from .configs import *
 import logging
 import yaml
-import dataset
+from . import dataset
 from tqdm import tqdm
 import argparse
 import numpy as np
 
 import wandb
 
+# Helper classes implemented for Jittor
+class AverageMeter:
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
 
-def to_device(mlist, device):
-    for module in mlist:
-        module.to(device)
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+def _gaussian(window_size, sigma):
+    gauss = jt.exp(-(jt.arange(window_size, dtype='float32') - window_size // 2) ** 2 / float(2 * sigma ** 2))
+    return gauss / gauss.sum()
+
+def _create_window(window_size, channel, sigma):
+    _1D_window = _gaussian(window_size, sigma).unsqueeze(1)
+    _2D_window = jt.matmul(_1D_window, _1D_window.transpose(1, 0)).float().unsqueeze(0).unsqueeze(0)
+    window = _2D_window.expand(channel, 1, window_size, window_size).contiguous()
+    return window
+
+class SSIMLoss(jt.nn.Module):
+    def __init__(self, window_size=11, sigma=1.5):
+        super(SSIMLoss, self).__init__()
+        self.window_size = window_size
+        self.sigma = sigma
+        self.channel = 1
+        self.window = _create_window(window_size, self.channel, sigma)
+
+    def execute(self, img1, img2):
+        (_, channel, _, _) = img1.shape
+        if channel == self.channel and jt.flags.use_cuda == 1:
+            window = self.window
+        else:
+            window = _create_window(self.window_size, channel, self.sigma)
+            self.window = window
+            self.channel = channel
+
+        mu1 = jt.nn.conv2d(img1, window, padding=self.window_size//2, groups=channel)
+        mu2 = jt.nn.conv2d(img2, window, padding=self.window_size//2, groups=channel)
+        
+        mu1_sq = mu1.pow(2)
+        mu2_sq = mu2.pow(2)
+        mu1_mu2 = mu1 * mu2
+        
+        sigma1_sq = jt.nn.conv2d(img1 * img1, window, padding=self.window_size//2, groups=channel) - mu1_sq
+        sigma2_sq = jt.nn.conv2d(img2 * img2, window, padding=self.window_size//2, groups=channel) - mu2_sq
+        sigma12 = jt.nn.conv2d(img1 * img2, window, padding=self.window_size//2, groups=channel) - mu1_mu2
+        
+        C1 = 0.01 ** 2
+        C2 = 0.03 ** 2
+        
+        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+        return 1 - ssim_map.mean()
 
 
-def init_params_group(mlist):
-    pg0, pg1, pg2 = [], [], []
-    for m in mlist:
-        pg = get_param_groups(m)
-        pg0.extend(pg[0])
-        pg1.extend(pg[1])
-        pg2.extend(pg[2])
-    return pg0, pg1, pg2
+# This function is not used, the logic is now applied directly when creating the optimizer.
+# def init_params_group(mlist):
+#     pg0, pg1, pg2 = [], [], []
+#     for m in mlist:
+#         pg = get_param_groups(m)
+#         pg0.extend(pg[0])
+#         pg1.extend(pg[1])
+#         pg2.extend(pg[2])
+#     return pg0, pg1, pg2
 
 
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
+    jt.seed(seed)
 
 
 def train(cfg_path, wb_key):
@@ -56,28 +110,39 @@ def train(cfg_path, wb_key):
     runs = wandb.init(project=cfg.project_name, name=cfg.dataset_name + '_' + cfg.exp_name, config=cfg, mode=cfg.wandb_mode)
 
     # Model
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if jt.has_cuda:
+        jt.flags.use_cuda = 1
+        logging.info("Jittor is using CUDA")
+    else:
+        logging.info("Jittor is using CPU")
+        
     fuse_net = Fuse()
-    module_list = [fuse_net]
-    to_device(module_list, device)
 
-    optimizer = torch.optim.Adam(fuse_net.parameters(), lr=cfg.lr_i)
-    lr_func = lambda x: (1 - x / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
+    # Correctly setup optimizer with parameter groups for weight decay
+    pg0, pg1, pg2 = get_param_groups(fuse_net)
+    optimizer = jt.optim.Adam(
+        [{'params': pg0, 'weight_decay': cfg.weight_decay},
+         {'params': pg1, 'weight_decay': 0.0},
+         {'params': pg2, 'weight_decay': 0.0}],
+        lr=cfg.lr_i
+    )
+    # Jittor does not have LambdaLR, so we will update lr manually
+    # lr_func = lambda x: (1 - x / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
+    # scheduler = jt.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
 
     if cfg.resume is not None:
         logging.info(f'Resume from {cfg.resume}')
-        checkpoint = torch.load(cfg.resume)
+        checkpoint = jt.load(cfg.resume)
         fuse_net.load_state_dict(checkpoint['fuse_net'])
 
-    loss_ssim = kornia.losses.SSIMLoss(window_size=11)
+    loss_ssim = SSIMLoss(window_size=11)
     loss_grad_pixel = PixelGradLoss()
 
     train_d = getattr(dataset, cfg.dataset_name)
     train_dataset = train_d(cfg, 'train')
 
     trainloader = DataLoader(
-        train_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, collate_fn=train_dataset.__collate_fn__, pin_memory=True
+        train_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, collate_fn=train_dataset.__collate_fn__
     )
 
     '''
@@ -85,8 +150,6 @@ def train(cfg_path, wb_key):
     Train
     ------------------------------------------------------------------------------
     '''
-
-    # torch.backends.cudnn.benchmark = True
     logging.info('Start training...')
     for epoch in range(cfg.start_epoch, cfg.num_epochs):
         '''train'''
@@ -100,9 +163,8 @@ def train(cfg_path, wb_key):
         loss_dict = {}
         iter = tqdm(trainloader, total=len(trainloader), ncols=80)
         for data_ir, data_vi, mask, _ in iter:
-            data_ir, data_vi, mask = data_ir.to(device), data_vi.to(device), mask.to(device)
-            for m in module_list:
-                m.train()
+            fuse_net.train()
+            
             fus_data, amp, pha = fuse_net(data_ir, data_vi)
             # conten_loss
             content_loss = loss_grad_pixel(data_vi, data_ir, fus_data)
@@ -120,9 +182,7 @@ def train(cfg_path, wb_key):
 
             total_loss = cfg.coeff_content * content_loss + cfg.coeff_ssim * ssim_loss + cfg.coeff_saliency * saliency_loss + cfg.coeff_fre * fre_loss
 
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
+            optimizer.step(total_loss)
 
             # loss dict
             loss_dict |= {
@@ -137,12 +197,14 @@ def train(cfg_path, wb_key):
             iter.set_description(f'Epoch {epoch + 1}/{cfg.num_epochs}')
             iter.set_postfix(loss_dict)
 
-        scheduler.step()
+        # Manually update learning rate
+        lr_decay_factor = (1 - epoch / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
+        optimizer.lr = cfg.lr_i * lr_decay_factor
 
         # 打印信息
         print('*' * 60 + '\tepoch finished!')
         logging.info(
-            f'Epoch {epoch + 1}/{cfg.num_epochs}, lr:{optimizer.param_groups[0]["lr"]}, total_loss: {total_loss_meter.avg}, content_loss: {content_loss_meter.avg}, ssim_loss: {ssim_loss_meter.avg}, saliency_loss: {saliency_loss_meter.avg}, fre_loss: {fre_loss_meter.avg}'
+            f'Epoch {epoch + 1}/{cfg.num_epochs}, lr:{optimizer.lr}, total_loss: {total_loss_meter.avg}, content_loss: {content_loss_meter.avg}, ssim_loss: {ssim_loss_meter.avg}, saliency_loss: {saliency_loss_meter.avg}, fre_loss: {fre_loss_meter.avg}'
         )
 
         log_dict |= {
@@ -151,7 +213,7 @@ def train(cfg_path, wb_key):
             'ssim_loss': ssim_loss_meter.avg,
             'saliency_loss': saliency_loss_meter.avg,
             'fre_loss': fre_loss_meter.avg,
-            'lr': optimizer.param_groups[0]["lr"],
+            'lr': optimizer.lr,
         }
 
         # update wandb
@@ -165,8 +227,7 @@ def train(cfg_path, wb_key):
             save_path = os.path.join("models", f'{cfg.exp_name}.pth')
             if not os.path.exists('models'):
                 os.makedirs('models')
-            torch.save(checkpoint, save_path)
-        torch.cuda.empty_cache()
+            jt.save(checkpoint, save_path)
 
 
 if __name__ == "__main__":
