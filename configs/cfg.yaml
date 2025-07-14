@@ -3,7 +3,7 @@ dataset_name: RoadScene
 seed: 3407
 have_seg_label: False
 project_name: SFDFusion_jittor
-exp_name: model-test-0
+exp_name: model-compare-0
 resume: ~
 img_size: 320
 
@@ -12,7 +12,7 @@ wandb_mode: online
 
 start_epoch: 0
 # num_epochs : 50
-num_epochs: 5
+num_epochs: 10
 # epoch_gap : 50
 epoch_gap: 1
 batch_size: 4

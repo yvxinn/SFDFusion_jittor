@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Literal
 import os
 
-from SFDFusion_jittor.configs import ConfigDict
-from SFDFusion_jittor.utils.img_read import img_read
+from configs import ConfigDict
+from utils.img_read import img_read
 
 class RoadScene(Dataset):
     def __init__(self, cfg: ConfigDict, mode: Literal['train', 'val', 'test'], batch_size=1, shuffle=False):

@@ -6,13 +6,13 @@ import random
 import jittor as jt
 import jittor.nn as nn
 from jittor.dataset import DataLoader
-from .modules import *
-from .utils.loss import *
-from .utils.get_params_group import get_param_groups
-from .configs import *
+from modules import *
+from utils.loss import *
+from utils.get_params_group import get_param_groups
+from configs import *
+import dataset
 import logging
 import yaml
-from . import dataset
 from tqdm import tqdm
 import argparse
 import numpy as np
@@ -118,14 +118,14 @@ def train(cfg_path, wb_key):
         
     fuse_net = Fuse()
 
-    # Correctly setup optimizer with parameter groups for weight decay
-    pg0, pg1, pg2 = get_param_groups(fuse_net)
+    # --- 关键修改: 与 PyTorch 版本对齐 ---
+    # 移除参数分组，直接将所有参数传入优化器
     optimizer = jt.optim.Adam(
-        [{'params': pg0, 'weight_decay': cfg.weight_decay},
-         {'params': pg1, 'weight_decay': 0.0},
-         {'params': pg2, 'weight_decay': 0.0}],
+        fuse_net.parameters(),
         lr=cfg.lr_i
     )
+    # --- 修改结束 ---
+
     # Jittor does not have LambdaLR, so we will update lr manually
     # lr_func = lambda x: (1 - x / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
     # scheduler = jt.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
