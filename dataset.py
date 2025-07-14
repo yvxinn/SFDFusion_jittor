@@ -1,6 +1,6 @@
 import jittor as jt
 from jittor.dataset import Dataset
-from jittor.transform import Resize, ToTensor, to_pil_image
+from jittor.transform import Compose, Resize, ToTensor
 
 import logging
 from pathlib import Path
@@ -18,8 +18,15 @@ class RoadScene(Dataset):
         self.img_list = Path(Path(self.cfg.dataset_root) / f'{mode}.txt').read_text().splitlines()
         logging.info(f'load {len(self.img_list)} images for {mode} mode')
 
-        self.resize_transform = Resize((cfg.img_size, cfg.img_size))
-        self.to_tensor_transform = ToTensor()
+        # 关键修改 1: 定义标准的 transform 流水线
+        # ToTensor() 会自动处理归一化 ([0, 255] -> [0.0, 1.0]) 和维度转换 (H, W, C -> C, H, W)
+        self.train_transforms = Compose([
+            Resize((cfg.img_size, cfg.img_size)),
+            ToTensor()
+        ])
+        
+        # 测试模式只转换为张量，不进行缩放
+        self.test_transforms = ToTensor()
 
         if self.mode == 'train':
             self.ir_path = Path(Path(self.cfg.dataset_root) / 'ir')
@@ -31,48 +38,32 @@ class RoadScene(Dataset):
         
         self.set_attrs(batch_size=batch_size, total_len=len(self.img_list), shuffle=shuffle)
 
-   # 在 SFDFusion_jittor/dataset.py 文件中
-
     def __getitem__(self, index):
         img_name = self.img_list[index]
         
-        # 1. 调用 img_read，得到 Jittor 张量 (jt.Var)
-        ir_img_var = img_read(os.path.join(self.ir_path, img_name), mode='L')
-        vi_img_var, _ = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr')
+        # 关键修改 2: 读取原始的 PIL Image 对象
+        ir_pil = img_read(os.path.join(self.ir_path, img_name), mode='L')
+        
+        # 对于可见光，我们先转为 YCbCr，再分离出 Y 通道
+        vi_pil_y, _, _ = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr').split()
 
-        mask_var = None
+        mask = None
         if self.mode == 'train':
-            mask_var = img_read(os.path.join(self.mask_path, img_name), mode='L')
-
-        if self.mode == 'train':
-            # "张量 -> PIL -> 缩放 -> 张量" 的往返转换
-            
-            # 关键修改 1: to_pil_image 后手动指定模式为 'L'
-            # 这确保了后续的 ToTensor() 知道这是一个单通道灰度图
-            ir_pil = to_pil_image(ir_img_var).convert('L')
-            vi_pil = to_pil_image(vi_img_var).convert('L')
-            
-            ir_pil_resized = self.resize_transform(ir_pil)
-            vi_pil_resized = self.resize_transform(vi_pil)
-
-            ir_img = self.to_tensor_transform(ir_pil_resized)
-            vi_img = self.to_tensor_transform(vi_pil_resized)
-
-            mask = None
-            if mask_var is not None:
-                mask_pil = to_pil_image(mask_var).convert('L')
-                mask_pil_resized = self.resize_transform(mask_pil)
-                mask = self.to_tensor_transform(mask_pil_resized)
-
+            mask_pil = img_read(os.path.join(self.mask_path, img_name), mode='L')
+            # 应用训练变换
+            ir_img = self.train_transforms(ir_pil)
+            vi_img = self.train_transforms(vi_pil_y)
+            mask = self.train_transforms(mask_pil)
         else: # 测试模式
-            ir_img = ir_img_var
-            vi_img = vi_img_var
+            # 应用测试变换
+            ir_img = self.test_transforms(ir_pil)
+            vi_img = self.test_transforms(vi_pil_y)
             
+            # 尺寸裁剪逻辑 (对张量进行操作)
             _, h, w = ir_img.shape
             if h % 2 != 0 or w % 2 != 0:
                  ir_img = ir_img[:, : h // 2 * 2, : w // 2 * 2]
                  vi_img = vi_img[:, : h // 2 * 2, : w // 2 * 2]
-            mask = None
 
         return ir_img, vi_img, mask, img_name
     
