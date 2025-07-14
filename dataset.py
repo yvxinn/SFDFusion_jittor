@@ -45,7 +45,8 @@ class RoadScene(Dataset):
         ir_pil = img_read(os.path.join(self.ir_path, img_name), mode='L')
         
         # 对于可见光，我们先转为 YCbCr，再分离出 Y 通道
-        vi_pil_y, _, _ = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr').split()
+        # --- 关键修复：直接解包元组，而不是调用 .split() ---
+        vi_pil_y, _ = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr')
 
         mask = None
         if self.mode == 'train':

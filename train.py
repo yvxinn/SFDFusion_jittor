@@ -142,7 +142,7 @@ def train(cfg_path, wb_key):
     train_dataset = train_d(cfg, 'train')
 
     trainloader = DataLoader(
-        train_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, collate_fn=train_dataset.__collate_fn__
+        train_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers
     )
 
     '''

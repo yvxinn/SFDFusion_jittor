@@ -17,7 +17,7 @@ def fft(input_real):
     x_complex = jt.stack([input_real, input_imag], dim=-1)
 
     # _fft2 要求输入是4维的 (N', H, W, 2)，所以合并 N 和 C 维度
-    x_complex_reshaped = x_complex.reshape((batch_size * channels, H, W, 2))
+    x_complex_reshaped = x_complex.view(batch_size * channels, H, W, 2)
 
     # 2. 调用底层的 _fft2
     # 输出 fft_full 的形状是 (N*C, H, W, 2)
@@ -29,7 +29,7 @@ def fft(input_real):
     fft_r_reshaped = fft_full[:, :, :output_width, :]
 
     # 4. 将形状恢复为 (N, C, H, W_out, 2)
-    fft_r = fft_r_reshaped.reshape(batch_size, channels, H, output_width, 2)
+    fft_r = fft_r_reshaped.view(batch_size, channels, H, output_width, 2)
 
     # 5. 从截取后的复数张量计算幅度和相位
     real_part = fft_r[..., 0]
@@ -161,8 +161,8 @@ class IFFT(nn.Module):
         # 拼接成完整频谱
         full_spectrum_complex = jt.concat([half_spectrum_complex, mirrored_part_conj_flipped], dim=3)
         
-        batch_size, channels, H, W_full, _ = full_spectrum_complex.shape
-        full_spectrum_reshaped = full_spectrum_complex.reshape((batch_size * channels, H, W_full, 2))
+        batch_size, channels, H, W_full = full_spectrum_complex.shape[:4]
+        full_spectrum_reshaped = full_spectrum_complex.view(batch_size * channels, H, W_full, 2)
 
         # 3. 执行逆 FFT
         x_ifft_complex = nn._fft2(full_spectrum_reshaped, inverse=True)
@@ -172,7 +172,7 @@ class IFFT(nn.Module):
 
         # 与 PyTorch 版本对齐，对逆变换后的实数结果取绝对值
         x_abs = jt.abs(x_real_reshaped)
-        x = x_abs.reshape((batch_size, channels, H, W_full))
+        x = x_abs.view(batch_size, channels, H, W_full)
         
         # 4. 沿通道维度计算统计特征，模拟PyTorch版本
         # x shape: (N, C, H, W)
@@ -221,10 +221,12 @@ class Fuse(nn.Module):
         super().__init__()
         self.channel = 8
         self.dmrm = DMRM(1, self.channel)
+        # --- 修复：与 PyTorch 版本对齐，不传入参数 ---
         self.ff1 = AmpFuse()
         self.ff2 = PhaFuse()
+        # --- 修复结束 ---
         self.ifft = IFFT(self.channel)
-        # 修正 3: Fuse_block 的输入维度是 3 * self.channel
+        # Fuse_block 的输入维度是 3 * self.channel
         self.fus_block = Fuse_block(self.channel * 3)
 
     def execute(self, ir, vi):
