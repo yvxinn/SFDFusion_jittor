@@ -13,27 +13,32 @@ def img_read(path: str, mode: str = 'L'):
     """
     img = Image.open(path)
     
-    # 统一使用 ToTensor，它在当前环境下返回 numpy array
     to_tensor_transform = transform.ToTensor()
 
     if mode == 'L':
         img = img.convert('L')
-        img_np = to_tensor_transform(img)
-        return jt.array(img_np)
+        return img
+        # img_np = to_tensor_transform(img)
+        # return img_np
+        # return jt.array(img_np)
 
     elif mode == 'RGB':
         img = img.convert('RGB')
-        img_np = to_tensor_transform(img)
-        return jt.array(img_np)
+        return img
+        # img_np = to_tensor_transform(img)
+        # return img_np
+        # return jt.array(img_np)
         
     elif mode == 'YCbCr':
         img = img.convert('YCbCr')
-        img_np = to_tensor_transform(img)
-        img_tensor = jt.array(img_np)
+        return img
+        # img_np = to_tensor_transform(img)
+        # img_tensor = img_np
+        # img_tensor = jt.array(img_np)
         # 分离 Y 和 CbCr 通道
-        y = img_tensor[0:1, :, :]
-        cbcr = img_tensor[1:3, :, :]
-        return y, cbcr
+        # y = img_tensor[0:1, :, :]
+        # cbcr = img_tensor[1:3, :, :]
+        # return y, cbcr
         
     else:
         raise ValueError(f"Unsupported mode: {mode}")

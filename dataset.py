@@ -1,6 +1,6 @@
 import jittor as jt
 from jittor.dataset import Dataset
-from jittor.transform import Compose, Resize, ToTensor
+from jittor.transform import Compose, Resize, ToTensor, Gray
 
 import logging
 from pathlib import Path
@@ -22,12 +22,9 @@ class RoadScene(Dataset):
         # ToTensor() 会自动处理归一化 ([0, 255] -> [0.0, 1.0]) 和维度转换 (H, W, C -> C, H, W)
         self.train_transforms = Compose([
             Resize((cfg.img_size, cfg.img_size)),
-            ToTensor()
+            ToTensor() 
         ])
         
-        # 测试模式只转换为张量，不进行缩放
-        self.test_transforms = ToTensor()
-
         if self.mode == 'train':
             self.ir_path = Path(Path(self.cfg.dataset_root) / 'ir')
             self.vi_path = Path(Path(self.cfg.dataset_root) / 'vi')
@@ -40,31 +37,29 @@ class RoadScene(Dataset):
 
     def __getitem__(self, index):
         img_name = self.img_list[index]
-        
-        # 关键修改 2: 读取原始的 PIL Image 对象
-        ir_pil = img_read(os.path.join(self.ir_path, img_name), mode='L')
-        
-        # 对于可见光，我们先转为 YCbCr，再分离出 Y 通道
-        # --- 关键修复：直接解包元组，而不是调用 .split() ---
-        vi_pil_y, _ = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr')
+        ir_pil  = img_read(os.path.join(self.ir_path, img_name), mode='L')
+        # print(f"Jittor img_read 'ir_img' shape: {ir_pil.shape}") 
+        vi_pil_ycbcr  = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr')
+        print(f"Jittor img_read 'vi_img' shape: {vi_pil_ycbcr}")
 
         mask = None
         if self.mode == 'train':
             mask_pil = img_read(os.path.join(self.mask_path, img_name), mode='L')
-            # 应用训练变换
             ir_img = self.train_transforms(ir_pil)
-            vi_img = self.train_transforms(vi_pil_y)
+            vi_img_ycbcr = self.train_transforms(vi_pil_ycbcr)
+            vi_img = vi_img_ycbcr[0:1, :, :] # 取出 Y 通道
             mask = self.train_transforms(mask_pil)
-        else: # 测试模式
-            # 应用测试变换
+        else:            
+            # 测试模式
             ir_img = self.test_transforms(ir_pil)
-            vi_img = self.test_transforms(vi_pil_y)
-            
-            # 尺寸裁剪逻辑 (对张量进行操作)
-            _, h, w = ir_img.shape
+            vi_img_ycbcr = self.test_transforms(vi_pil_ycbcr)
+            vi_img = vi_img_ycbcr[0:1, :, :]
+
+            # 裁剪逻辑现在可以正常工作
+            c, h, w = ir_img.shape
             if h % 2 != 0 or w % 2 != 0:
-                 ir_img = ir_img[:, : h // 2 * 2, : w // 2 * 2]
-                 vi_img = vi_img[:, : h // 2 * 2, : w // 2 * 2]
+                 ir_img = ir_img[:, :h // 2 * 2, :w // 2 * 2]
+                 vi_img = vi_img[:, :h // 2 * 2, :w // 2 * 2]
 
         return ir_img, vi_img, mask, img_name
     

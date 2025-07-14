@@ -110,7 +110,7 @@ def train(cfg_path, wb_key):
     runs = wandb.init(project=cfg.project_name, name=cfg.dataset_name + '_' + cfg.exp_name, config=cfg, mode=cfg.wandb_mode)
 
     # Model
-    if jt.has_cuda:
+    if jt.compiler.has_cuda:
         jt.flags.use_cuda = 1
         logging.info("Jittor is using CUDA")
     else:
@@ -185,9 +185,7 @@ def train(cfg_path, wb_key):
             optimizer.step(total_loss)
 
             # loss dict
-            loss_dict |= {
-                'total_loss': total_loss.item(),
-            }
+            loss_dict['total_loss'] = total_loss.item()
             total_loss_meter.update(total_loss.item())
             content_loss_meter.update(content_loss.item())
             ssim_loss_meter.update(ssim_loss.item())
@@ -207,14 +205,14 @@ def train(cfg_path, wb_key):
             f'Epoch {epoch + 1}/{cfg.num_epochs}, lr:{optimizer.lr}, total_loss: {total_loss_meter.avg}, content_loss: {content_loss_meter.avg}, ssim_loss: {ssim_loss_meter.avg}, saliency_loss: {saliency_loss_meter.avg}, fre_loss: {fre_loss_meter.avg}'
         )
 
-        log_dict |= {
+        log_dict.update({
             'total_loss': total_loss_meter.avg,
             'content_loss': content_loss_meter.avg,
             'ssim_loss': ssim_loss_meter.avg,
             'saliency_loss': saliency_loss_meter.avg,
             'fre_loss': fre_loss_meter.avg,
             'lr': optimizer.lr,
-        }
+        })
 
         # update wandb
         runs.log(log_dict)
@@ -223,8 +221,8 @@ def train(cfg_path, wb_key):
         if (epoch + 1) % cfg.epoch_gap == 0:
             checkpoint = {'fuse_net': fuse_net.state_dict()}
 
-            logging.info(f'Save checkpoint to models/{cfg.exp_name}.pth')
-            save_path = os.path.join("models", f'{cfg.exp_name}.pth')
+            logging.info(f'Save checkpoint to models/{cfg.exp_name}.pkl')
+            save_path = os.path.join("models", f'{cfg.exp_name}.pkl')
             if not os.path.exists('models'):
                 os.makedirs('models')
             jt.save(checkpoint, save_path)
@@ -237,4 +235,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     train(args.cfg, args.auth)
     # 运行命令行代码
-    os.system(f'nohup python val.py')
+    os.system(f'nohup python3 val.py &')
