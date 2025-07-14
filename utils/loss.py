@@ -115,12 +115,12 @@ def cal_fre_loss(amp, pha, ir, vi, mask):
     频率损失函数。
     迁移说明: 逻辑与 PyTorch 完全对等。最终的数值差异源于 cc 函数的敏感性。
     """
-    # 步骤 1: 从振幅和相位重建复数半谱 (half-spectrum)。
+    # 从振幅和相位重建复数半谱 (half-spectrum)。
     real = amp * jt.cos(pha)
     imag = amp * jt.sin(pha)
     half_spec = jt.stack([real, imag], dim=-1)
     
-    # 步骤 2: 手动构建厄米共轭对称的全谱 (full-spectrum)。
+    # 手动构建厄米共轭对称的全谱 (full-spectrum)。
     # 这是手动实现 irfft 的核心步骤之一。
     N, C, H, W_half, _ = half_spec.shape
     W = (W_half - 1) * 2
@@ -132,19 +132,19 @@ def cal_fre_loss(amp, pha, ir, vi, mask):
         sym = jt.flip(sym, dim=3) # 频率翻转
         full_spec[:, :, :, W_half:, :] = sym
 
-    # 步骤 3: 调用通用的复数到复数逆变换。
+    # 调用通用的复数到复数逆变换。
     full_spec_reshape = full_spec.reshape((-1, H, W, 2))
     x_ifft = nn._fft2(full_spec_reshape, inverse=True)
     x_ifft = x_ifft.reshape(N, C, H, W, 2)[..., 0] # 取实部
     
-    # 步骤 4: [关键修正] 手动进行归一化，以匹配 PyTorch `norm='ortho'` 的尺度。
+    # [关键修正] 手动进行归一化，以匹配 PyTorch `norm='ortho'` 的尺度。
     # PyTorch 的 'ortho' 模式归一化因子为 1/sqrt(N)，我们在此精确复现。
     norm_factor = jt.sqrt(jt.array(float(H * W)))
     x_ifft = x_ifft / norm_factor
 
     x_ifft = jt.abs(x_ifft)
 
-    # 步骤 5: 保持与 PyTorch 原始逻辑完全一致，使用 cc 函数计算最终损失。
+    # 保持与 PyTorch 原始逻辑完全一致，使用 cc 函数计算最终损失。
     loss_ir = cc(x_ifft * mask, ir * mask)
     loss_vi = cc(x_ifft * (1 - mask), vi * (1 - mask))
     return loss_ir + loss_vi

@@ -2,77 +2,100 @@ from modules import *
 import os
 import numpy as np
 from utils.evaluator import Evaluator
-import torch
+import jittor as jt
 from utils.img_read import *
 import argparse
 import logging
-from kornia.metrics import AverageMeter
 from tqdm import tqdm
 import warnings
 import yaml
 from configs import from_dict
-import dataset
-from torch.utils.data import DataLoader
-# from thop import profile, clever_format # 移除，因为依赖 PyTorch
+from jittor.dataset import DataLoader
 import time
 import cv2
 
 warnings.filterwarnings("ignore")
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 log_f = '%(asctime)s | %(filename)s[line:%(lineno)d] | %(levelname)s | %(message)s'
 logging.basicConfig(level='INFO', format=log_f)
 
+# Helper class implemented for Jittor
+class AverageMeter:
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
 
-def test(args):
-    test_d = getattr(dataset, cfg.dataset_name)
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+def test(args, cfg):
+    # Dynamically import the dataset based on cfg
+    import dataset as dataset_module
+    test_d = getattr(dataset_module, cfg.dataset_name)
     test_dataset = test_d(cfg, 'test')
 
     testloader = DataLoader(
-        test_dataset, batch_size=1, shuffle=False, num_workers=cfg.num_workers, collate_fn=test_dataset.__collate_fn__, pin_memory=True
+        test_dataset, batch_size=1, shuffle=False, num_workers=cfg.num_workers
     )
     fuse_out_folder = args.out_dir
     if not os.path.exists(fuse_out_folder):
         os.makedirs(fuse_out_folder)
 
     fuse_net = Fuse()
-    ckpt = torch.load(args.ckpt_path, map_location=device)
+    ckpt = jt.load(args.ckpt_path)
     fuse_net.load_state_dict(ckpt['fuse_net'])
-    fuse_net.to(device)
     fuse_net.eval()
 
     time_list = []
-    with torch.no_grad():
-        logging.info(f'fusing images ...')
-        iter = tqdm(testloader, total=len(testloader), ncols=80)
-        for data_ir, data_vi, _, img_name in iter:
-            data_vi, data_ir = data_vi.to(device), data_ir.to(device)
-
-            ts = time.time()
-            fus_data, _, _ = fuse_net(data_ir, data_vi)
-            te = time.time()
-            time_list.append(te - ts)
-            if args.mode == 'gray':
-                fi = np.squeeze((fus_data * 255).cpu().numpy()).astype(np.uint8)
-                img_save(fi, img_name[0], fuse_out_folder)
-            elif args.mode == 'RGB':
-                vi_cbcr = vi_cbcr.to(device)
-                fi = torch.cat((fus_data, vi_cbcr), dim=1)
-                fi = ycbcr_to_rgb(fi)
-                fi = tensor_to_image(fi) * 255
-                fi = fi.astype(np.uint8)
-                img_save(fi, img_name[0], fuse_out_folder, mode='RGB')
+    logging.info(f'fusing images ...')
+    iter = tqdm(testloader, total=len(testloader), ncols=80)
+    for data_ir, data_vi, _, img_name in iter:
+        
+        ts = time.time()
+        fus_data, _, _ = fuse_net(data_ir, data_vi)
+        jt.sync_all() # Ensure completion for timing
+        te = time.time()
+        time_list.append(te - ts)
+        
+        if args.mode == 'gray':
+            fi = np.squeeze((fus_data.numpy() * 255)).astype(np.uint8)
+            img_save(fi, img_name[0], fuse_out_folder)
+        elif args.mode == 'RGB':
+            # This part is complex and depends on how YCbCr data is handled.
+            # It seems vi_cbcr was missing in the original dataloader for this mode.
+            # We will replicate the gray logic for now.
+            logging.warning("RGB mode in val.py is not fully supported due to missing 'vi_cbcr' data. Defaulting to gray.")
+            fi = np.squeeze((fus_data.numpy() * 255)).astype(np.uint8)
+            img_save(fi, img_name[0], fuse_out_folder)
 
     logging.info(f'fusing images done!')
-    logging.info(f'time: {np.round(np.mean(time_list[1:]), 6)}s')
-    evaluate(fuse_out_folder)
+    # Skip the first image for timing calculation as it may include compilation time
+    if len(time_list) > 1:
+        logging.info(f'time: {np.round(np.mean(time_list[1:]), 6)}s')
+    else:
+        logging.info(f'time: {np.round(np.mean(time_list), 6)}s')
+    evaluate(fuse_out_folder, cfg)
 
 
-def evaluate(fuse_out_folder):
-    test_d = getattr(dataset, cfg.dataset_name)
+def evaluate(fuse_out_folder, cfg):
+    # Dynamically import the dataset based on cfg
+    import dataset as dataset_module
+    test_d = getattr(dataset_module, cfg.dataset_name)
     test_dataset = test_d(cfg, 'test')
+    
     testloader = DataLoader(
-        test_dataset, batch_size=1, shuffle=False, num_workers=cfg.num_workers, collate_fn=test_dataset.__collate_fn__, pin_memory=True
+        test_dataset, batch_size=1, shuffle=False, num_workers=cfg.num_workers
     )
     metric_result = [AverageMeter() for _ in range(6)]
 
@@ -82,13 +105,15 @@ def evaluate(fuse_out_folder):
     for data_ir, data_vi, _, img_name in iter:
         ir = data_ir.numpy().squeeze() * 255
         vi = data_vi.numpy().squeeze() * 255
+        
+        # img_read returns a Jittor Var, so we call .numpy() on it
         fi = img_read(os.path.join(fuse_out_folder, img_name[0]), 'L').numpy().squeeze() * 255
         h, w = fi.shape
-        if h // 2 != 0 or w // 2 != 0:
+        if h % 2 != 0 or w % 2 != 0:
             fi = fi[: h // 2 * 2, : w // 2 * 2]
         if fi.shape != ir.shape or fi.shape != vi.shape:
             fi = cv2.resize(fi, (ir.shape[1], ir.shape[0]))
-        # print(ir.shape, vi.shape, fi.shape)
+
         metric_result[0].update(Evaluator.EN(fi))
         metric_result[1].update(Evaluator.SD(fi))
         metric_result[2].update(Evaluator.SF(fi))
@@ -128,6 +153,10 @@ def evaluate(fuse_out_folder):
 
 
 if __name__ == "__main__":
+    if jt.has_cuda:
+        jt.flags.use_cuda = 1
+        logging.info("Jittor is using CUDA for validation")
+
     config = yaml.safe_load(open('configs/cfg.yaml'))
     cfg = from_dict(config)
     parse = argparse.ArgumentParser()
@@ -137,5 +166,5 @@ if __name__ == "__main__":
     parse.add_argument('--mode', type=str, default='gray')
     args = parse.parse_args()
 
-    test(args)
+    test(args, cfg)
     # evaluate("./test_result/res.txt")
