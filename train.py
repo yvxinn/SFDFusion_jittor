@@ -16,7 +16,6 @@ import yaml
 from tqdm import tqdm
 import argparse
 import numpy as np
-
 import wandb
 
 # Helper classes implemented for Jittor
@@ -36,62 +35,6 @@ class AverageMeter:
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-
-def _gaussian(window_size, sigma):
-    gauss = jt.exp(-(jt.arange(window_size, dtype='float32') - window_size // 2) ** 2 / float(2 * sigma ** 2))
-    return gauss / gauss.sum()
-
-def _create_window(window_size, channel, sigma):
-    _1D_window = _gaussian(window_size, sigma).unsqueeze(1)
-    _2D_window = jt.matmul(_1D_window, _1D_window.transpose(1, 0)).float().unsqueeze(0).unsqueeze(0)
-    window = _2D_window.expand(channel, 1, window_size, window_size).contiguous()
-    return window
-
-class SSIMLoss(jt.nn.Module):
-    def __init__(self, window_size=11, sigma=1.5):
-        super(SSIMLoss, self).__init__()
-        self.window_size = window_size
-        self.sigma = sigma
-        self.channel = 1
-        self.window = _create_window(window_size, self.channel, sigma)
-
-    def execute(self, img1, img2):
-        (_, channel, _, _) = img1.shape
-        if channel == self.channel and jt.flags.use_cuda == 1:
-            window = self.window
-        else:
-            window = _create_window(self.window_size, channel, self.sigma)
-            self.window = window
-            self.channel = channel
-
-        mu1 = jt.nn.conv2d(img1, window, padding=self.window_size//2, groups=channel)
-        mu2 = jt.nn.conv2d(img2, window, padding=self.window_size//2, groups=channel)
-        
-        mu1_sq = mu1.pow(2)
-        mu2_sq = mu2.pow(2)
-        mu1_mu2 = mu1 * mu2
-        
-        sigma1_sq = jt.nn.conv2d(img1 * img1, window, padding=self.window_size//2, groups=channel) - mu1_sq
-        sigma2_sq = jt.nn.conv2d(img2 * img2, window, padding=self.window_size//2, groups=channel) - mu2_sq
-        sigma12 = jt.nn.conv2d(img1 * img2, window, padding=self.window_size//2, groups=channel) - mu1_mu2
-        
-        C1 = 0.01 ** 2
-        C2 = 0.03 ** 2
-        
-        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-        return 1 - ssim_map.mean()
-
-
-# This function is not used, the logic is now applied directly when creating the optimizer.
-# def init_params_group(mlist):
-#     pg0, pg1, pg2 = [], [], []
-#     for m in mlist:
-#         pg = get_param_groups(m)
-#         pg0.extend(pg[0])
-#         pg1.extend(pg[1])
-#         pg2.extend(pg[2])
-#     return pg0, pg1, pg2
-
 
 def set_seed(seed):
     random.seed(seed)

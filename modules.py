@@ -186,12 +186,12 @@ class IFFT(nn.Module):
         return x_out
 
 class AmpFuse(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self):
         super().__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(2, 1, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.1),
-            nn.Conv2d(in_channels, 1, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.1),
         )
 
@@ -202,12 +202,12 @@ class AmpFuse(nn.Module):
 
 
 class PhaFuse(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self):
         super().__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(2, 1, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.1),
-            nn.Conv2d(in_channels, 1, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.1),
         )
 
@@ -221,12 +221,10 @@ class Fuse(nn.Module):
         super().__init__()
         self.channel = 8
         self.dmrm = DMRM(1, self.channel)
-        # --- 关键修复：与 PyTorch 版本对齐，传入拼接后的总通道数 ---
-        self.ff1 = AmpFuse(in_channels=2)
-        self.ff2 = PhaFuse(in_channels=2)
-        # --- 修复结束 ---
+        self.ff1 = AmpFuse()
+        self.ff2 = PhaFuse()
         self.ifft = IFFT(self.channel)
-        # 修正 3: Fuse_block 的输入维度是 3 * self.channel
+        # Fuse_block 的输入维度是 3 * self.channel
         self.fus_block = Fuse_block(self.channel * 3)
 
     def execute(self, ir, vi):
