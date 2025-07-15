@@ -99,7 +99,7 @@ def set_seed(seed):
     jt.seed(seed)
 
 
-def train(cfg_path, wb_key):
+def train(cfg_path, wb_key, load_initial_weights=None):
     config = yaml.safe_load(open(cfg_path))
     cfg = from_dict(config)
     set_seed(cfg.seed)
@@ -130,10 +130,27 @@ def train(cfg_path, wb_key):
     # lr_func = lambda x: (1 - x / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
     # scheduler = jt.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
 
-    if cfg.resume is not None:
+    if load_initial_weights:
+        if cfg.resume:
+            logging.warning(f"Both --load_initial_weights and resume are set. Prioritizing initial weights from {load_initial_weights}.")
+        logging.info(f"Loading initial weights from {load_initial_weights}...")
+        try:
+            import pickle
+            with open(load_initial_weights, 'rb') as f:
+                initial_weights = pickle.load(f)
+            fuse_net.load_state_dict(initial_weights)
+            logging.info("✅ Successfully loaded initial weights.")
+        except Exception as e:
+            logging.error(f"Failed to load initial weights from {load_initial_weights}: {e}")
+            raise
+    elif cfg.resume is not None:
         logging.info(f'Resume from {cfg.resume}')
         checkpoint = jt.load(cfg.resume)
-        fuse_net.load_state_dict(checkpoint['fuse_net'])
+        if isinstance(checkpoint, dict) and 'fuse_net' in checkpoint:
+            fuse_net.load_state_dict(checkpoint['fuse_net'])
+        else:
+            fuse_net.load_state_dict(checkpoint)
+
 
     loss_ssim = SSIMLoss(window_size=11)
     loss_grad_pixel = PixelGradLoss()
@@ -232,7 +249,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default='configs/cfg.yaml', help='config file path')
     parser.add_argument('--auth', default='9f7cff4767e982880d4259c5134e17aa9e91b530', help='wandb auth api key')
+    parser.add_argument('--load_initial_weights', type=str, default=None, help='Path to load initial weights from a Jittor-compatible .bin file.')
     args = parser.parse_args()
-    train(args.cfg, args.auth)
+    train(args.cfg, args.auth, args.load_initial_weights)
     # 运行命令行代码
     os.system(f'nohup python3 val.py &')

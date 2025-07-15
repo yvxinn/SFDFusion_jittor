@@ -40,7 +40,7 @@ class RoadScene(Dataset):
         ir_pil  = img_read(os.path.join(self.ir_path, img_name), mode='L')
         # print(f"Jittor img_read 'ir_img' shape: {ir_pil.shape}") 
         vi_pil_ycbcr  = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr')
-        print(f"Jittor img_read 'vi_img' shape: {vi_pil_ycbcr}")
+        # print(f"Jittor img_read 'vi_img' shape: {vi_pil_ycbcr}")
 
         mask = None
         if self.mode == 'train':
