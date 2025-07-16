@@ -60,36 +60,26 @@ class Att_Block(nn.Module):
 class Sobelxy(nn.Module):
     def __init__(self, channels, kernel_size=3, padding=1, stride=1, dilation=1, groups=1):
         super(Sobelxy, self).__init__()
-        sobel_filter_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]]).astype(np.float32)
-        sobel_filter_y = sobel_filter_x.T
-
-        weight_x = np.zeros((channels, 1, kernel_size, kernel_size), dtype=np.float32)
-        weight_y = np.zeros((channels, 1, kernel_size, kernel_size), dtype=np.float32)
-
-        for i in range(channels):
-            weight_x[i, 0] = sobel_filter_x
-            weight_y[i, 0] = sobel_filter_y
-
-        self.convx = nn.Conv2d(
-            channels, channels, kernel_size=kernel_size, padding=padding, stride=stride, dilation=dilation, groups=channels, bias=False
-        )
-        self.convx.weight = jt.array(weight_x)
+        # 与loss.py中的Sobelxy保持一致，使用简单的单通道实现
+        # 与PyTorch版本完全一致的权重初始化
+        kernelx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
+        kernely = [[1, 2, 1], [0, 0, 0], [-1, -2, -1]]
         
-        self.convy = nn.Conv2d(
-            channels, channels, kernel_size=kernel_size, padding=padding, stride=stride, dilation=dilation, groups=channels, bias=False
-        )
-        self.convy.weight = jt.array(weight_y)
-
-        # 明确设置Sobel算子的权重不需要计算梯度，统一框架行为
-        self.convx.weight.stop_grad()
-        self.convy.weight.stop_grad()
-
+        # 创建与PyTorch完全一致的权重形状 (1, 1, 3, 3)
+        kx = jt.array(kernelx, dtype=jt.float32).view(1, 1, 3, 3).stop_grad()
+        ky = jt.array(kernely, dtype=jt.float32).view(1, 1, 3, 3).stop_grad()
+        
+        self.weightx = kx
+        self.weighty = ky
 
     def execute(self, x):
-        sobelx = self.convx(x)
-        sobely = self.convy(x)
-        x = jt.add(jt.abs(sobelx), jt.abs(sobely))
-        return x
+        # 使用与PyTorch完全一致的卷积方式
+        # PyTorch: F.conv2d(x, self.weightx, padding=1)
+        # 这里x是(N, C, H, W)，weightx是(1, 1, 3, 3)
+        # 会自动广播到所有通道
+        sx = nn.conv2d(x, self.weightx, padding=1)
+        sy = nn.conv2d(x, self.weighty, padding=1)
+        return jt.abs(sx) + jt.abs(sy)
 
 
 class DMRM(nn.Module):

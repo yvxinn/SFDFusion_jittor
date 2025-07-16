@@ -40,6 +40,11 @@ def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     jt.seed(seed)
+    
+    # 确保CUDA随机性的确定性（如果可用）
+    if jt.compiler.has_cuda:
+        # Jittor的确定性设置
+        jt.flags.use_cuda = 1
 
 
 def train(cfg_path, wb_key, load_initial_weights=None):
@@ -63,9 +68,13 @@ def train(cfg_path, wb_key, load_initial_weights=None):
 
     # --- 关键修改: 与 PyTorch 版本对齐 ---
     # 移除参数分组，直接将所有参数传入优化器
+    # 明确设置所有Adam参数以确保与PyTorch一致
     optimizer = jt.optim.Adam(
         fuse_net.parameters(),
-        lr=cfg.lr_i
+        lr=cfg.lr_i,
+        betas=(0.9, 0.999),  # PyTorch默认值
+        eps=1e-8,            # PyTorch默认值
+        weight_decay=0       # PyTorch默认值
     )
     # --- 修改结束 ---
 

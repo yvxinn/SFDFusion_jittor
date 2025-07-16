@@ -2,7 +2,6 @@ from PIL import Image
 import os
 import jittor as jt
 import numpy as np
-from jittor import transform
 
 def img_read(path: str, mode: str = 'L'):
     """
@@ -13,33 +12,15 @@ def img_read(path: str, mode: str = 'L'):
     """
     img = Image.open(path)
     
-    to_tensor_transform = transform.ToTensor()
-
     if mode == 'L':
         img = img.convert('L')
         return img
-        # img_np = to_tensor_transform(img)
-        # return img_np
-        # return jt.array(img_np)
-
     elif mode == 'RGB':
         img = img.convert('RGB')
         return img
-        # img_np = to_tensor_transform(img)
-        # return img_np
-        # return jt.array(img_np)
-        
     elif mode == 'YCbCr':
         img = img.convert('YCbCr')
         return img
-        # img_np = to_tensor_transform(img)
-        # img_tensor = img_np
-        # img_tensor = jt.array(img_np)
-        # 分离 Y 和 CbCr 通道
-        # y = img_tensor[0:1, :, :]
-        # cbcr = img_tensor[1:3, :, :]
-        # return y, cbcr
-        
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
@@ -67,13 +48,9 @@ def tensor_to_image(tensor: jt.Var):
     """
     将 Jittor Var (C, H, W) 转换为 NumPy 数组 (H, W, C)
     """
-    if not isinstance(tensor, jt.Var):
-        raise ValueError("Input must be a Jittor Var")
-        
     # 如果有 batch 维度，移除它
     if tensor.ndim == 4:
         tensor = jt.squeeze(tensor, 0)
-        
     # C, H, W -> H, W, C
     return tensor.numpy().transpose(1, 2, 0)
 
