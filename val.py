@@ -64,7 +64,7 @@ def test(args, cfg):
         
         ts = time.time()
         fus_data, _, _ = fuse_net(data_ir, data_vi)
-        jt.sync_all() # Ensure completion for timing
+        jt.sync_all(True) # Ensure completion for timing
         te = time.time()
         time_list.append(te - ts)
         
@@ -106,8 +106,9 @@ def evaluate(fuse_out_folder, cfg):
         ir = data_ir.numpy().squeeze() * 255
         vi = data_vi.numpy().squeeze() * 255
         
-        # img_read returns a Jittor Var, so we call .numpy() on it
-        fi = img_read(os.path.join(fuse_out_folder, img_name[0]), 'L').numpy().squeeze() * 255
+        # 修正: 先将 img_read 返回的 PIL Image 转为 numpy array
+        fi_pil = img_read(os.path.join(fuse_out_folder, img_name[0]), 'L')
+        fi = np.array(fi_pil).squeeze() # fi is now a numpy array, no need for .numpy()
         h, w = fi.shape
         if h % 2 != 0 or w % 2 != 0:
             fi = fi[: h // 2 * 2, : w // 2 * 2]
@@ -153,14 +154,15 @@ def evaluate(fuse_out_folder, cfg):
 
 
 if __name__ == "__main__":
-    if jt.has_cuda:
+    if jt.compiler.has_cuda:
         jt.flags.use_cuda = 1
         logging.info("Jittor is using CUDA for validation")
 
     config = yaml.safe_load(open('configs/cfg.yaml'))
     cfg = from_dict(config)
     parse = argparse.ArgumentParser()
-    parse.add_argument('--ckpt_path', type=str, default=f'models/{cfg.exp_name}.pth')
+    # 修正: 将权重文件的默认扩展名从 .pth 改为 .pkl
+    parse.add_argument('--ckpt_path', type=str, default=f'models/{cfg.exp_name}.pkl')
     parse.add_argument('--dataset_name', type=str, default=cfg.dataset_name)
     parse.add_argument('--out_dir', type=str, default=f'test_result/{cfg.dataset_name}/{cfg.exp_name}')
     parse.add_argument('--mode', type=str, default='gray')

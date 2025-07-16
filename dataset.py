@@ -21,8 +21,14 @@ class RoadScene(Dataset):
         # 关键修改 1: 定义标准的 transform 流水线
         # ToTensor() 会自动处理归一化 ([0, 255] -> [0.0, 1.0]) 和维度转换 (H, W, C -> C, H, W)
         self.train_transforms = Compose([
-            Resize((cfg.img_size, cfg.img_size)),
+            Resize((cfg.img_size, cfg.img_size)), # 训练时需要 Resize
             ToTensor() 
+        ])
+
+        # 补上缺失的 test_transforms 定义
+        self.test_transforms = Compose([
+            # Resize((cfg.img_size, cfg.img_size)), # 测试时不能 Resize，保持原样
+            ToTensor()
         ])
         
         if self.mode == 'train':
@@ -38,9 +44,8 @@ class RoadScene(Dataset):
     def __getitem__(self, index):
         img_name = self.img_list[index]
         ir_pil  = img_read(os.path.join(self.ir_path, img_name), mode='L')
-        # print(f"Jittor img_read 'ir_img' shape: {ir_pil.shape}") 
+        # 恢复 PyTorch 的原始逻辑，使用 YCbCr 并提取 Y 通道
         vi_pil_ycbcr  = img_read(os.path.join(self.vi_path, img_name), mode='YCbCr')
-        # print(f"Jittor img_read 'vi_img' shape: {vi_pil_ycbcr}")
 
         mask = None
         if self.mode == 'train':
@@ -53,7 +58,7 @@ class RoadScene(Dataset):
             # 测试模式
             ir_img = self.test_transforms(ir_pil)
             vi_img_ycbcr = self.test_transforms(vi_pil_ycbcr)
-            vi_img = vi_img_ycbcr[0:1, :, :]
+            vi_img = vi_img_ycbcr[0:1, :, :] # 取出 Y 通道
 
             # 裁剪逻辑现在可以正常工作
             c, h, w = ir_img.shape

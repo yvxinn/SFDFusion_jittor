@@ -1,6 +1,7 @@
 import jittor as jt
 import jittor.nn as nn
 import numpy as np
+from utils.fft_utils import jittor_irfftn_backward
 
 
 def fft(input_real):
@@ -79,11 +80,10 @@ class Sobelxy(nn.Module):
         )
         self.convy.weight = jt.array(weight_y)
 
-        # ======================= 最终修正 =======================
         # 明确设置Sobel算子的权重不需要计算梯度，统一框架行为
         self.convx.weight.stop_grad()
         self.convy.weight.stop_grad()
-        # ========================================================
+
 
     def execute(self, x):
         sobelx = self.convx(x)
@@ -145,41 +145,20 @@ class IFFT(nn.Module):
         )
 
     def execute(self, amp, pha):
-        # amp 和 pha 的形状是 (N, C, H, W//2 + 1)
-        # 1. 重建半复数频谱，与 PyTorch 版本对齐增加 1e-8
+        # 1. 重建半复数频谱
         real_part = amp * jt.cos(pha) + 1e-8
         imag_part = amp * jt.sin(pha) + 1e-8
-        half_spectrum_complex = jt.stack([real_part, imag_part], dim=-1)
+        half_spec = jt.stack([real_part, imag_part], dim=-1)
 
-        # 2. 从 rfft 的输出重建完整的复数频谱
-        mirrored_part = half_spectrum_complex[:, :, :, 1:-1, :]
-        mirrored_part_conj = jt.stack([mirrored_part[..., 0], -mirrored_part[..., 1]], dim=-1)
+        # 2. 执行 IFFT
+        x_ifft = jittor_irfftn_backward(half_spec)
+
+        # 3. 取绝对值得到空间域特征
+        x = jt.abs(x_ifft)
         
-        # 将共轭部分沿宽度维度(维度3)翻转
-        mirrored_part_conj_flipped = jt.flip(mirrored_part_conj, dim=3)
-
-        # 拼接成完整频谱
-        full_spectrum_complex = jt.concat([half_spectrum_complex, mirrored_part_conj_flipped], dim=3)
-        
-        batch_size, channels, H, W_full, _ = full_spectrum_complex.shape
-        full_spectrum_reshaped = full_spectrum_complex.reshape((batch_size * channels, H, W_full, 2))
-
-        # 3. 执行逆 FFT
-        x_ifft_complex = nn._fft2(full_spectrum_reshaped, inverse=True)
-
-        # 取实部并恢复形状
-        x_real_reshaped = x_ifft_complex[..., 0]
-
-        # 与 PyTorch 版本对齐，对逆变换后的实数结果取绝对值
-        x_abs = jt.abs(x_real_reshaped)
-        x = x_abs.reshape((batch_size, channels, H, W_full))
-        
-        # 4. 沿通道维度计算统计特征，模拟PyTorch版本
-        # x shape: (N, C, H, W)
+        # 4. 沿通道维度计算统计特征
         x_max = jt.max(x, dim=1, keepdims=True)
         x_mean = jt.mean(x, dim=1, keepdims=True)
-        
-        # 5. 拼接特征并通过卷积
         x_cat = jt.concat([x_max, x_mean], dim=1)
         
         x_out = self.conv1(x_cat)
@@ -245,10 +224,9 @@ class Fuse(nn.Module):
         # frefus: (N, 8, H, W)
         fus = self.fus_block(ir, vi, frefus)
         
-        # 归一化操作
+        # 归一化操作, 与 PyTorch 版本对齐
         min_val = fus.min()
         max_val = fus.max()
-        # 修正：与 PyTorch 版本对齐，移除 epsilon 以确保数值一致
         fus = (fus - min_val) / (max_val - min_val)
         
         return fus, amp, pha

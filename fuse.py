@@ -39,8 +39,13 @@ def fuse_all(args):
         out_dir_rgb.mkdir(parents=True, exist_ok=True)
 
     fuse_net = Fuse()
-    weights = np.load(args.ckpt_path)
-    fuse_net.load_state_dict({k: v for k, v in weights.items()})
+    weights = np.load(args.ckpt_path, allow_pickle=True)
+
+    # 权重文件将整个 state_dict 存在一个 'fuse_net' 键下
+    # 我们需要提取这个 state_dict 来加载
+    state_dict_to_load = weights['fuse_net']
+
+    fuse_net.load_state_dict(state_dict_to_load)
     fuse_net.eval()
     logging.info(f"模型权重已从 {args.ckpt_path} 加载。")
 
@@ -60,15 +65,20 @@ def fuse_all(args):
                 logging.warning(f"跳过 {img_name}，因为在可见光图像目录中找不到对应的文件。")
                 continue
 
-            # 读取图像并增加 batch 维度
-            ir_img = img_read(str(ir_path), mode='L').unsqueeze(0)
+            # 读取图像并增加 batch 维度, 转换为 float32 并归一化
+            ir_img = jt.array(np.array(img_read(str(ir_path), mode='L'))).unsqueeze(0).unsqueeze(0)
+            ir_img = ir_img.float() / 255.0
             
             if args.mode == 'RGB':
-                vi_y_img, vi_cbcr_img = img_read(str(vi_path), mode='YCbCr')
-                vi_y_img = vi_y_img.unsqueeze(0)
-                vi_cbcr_img = vi_cbcr_img.unsqueeze(0)
+                # YCbCr图 (H, W, C) -> (B, C, H, W)
+                vi_img_ycbcr = jt.array(np.array(img_read(str(vi_path), mode='YCbCr')).transpose(2, 0, 1))
+                vi_img_ycbcr = vi_img_ycbcr.float() / 255.0
+                # 分离 Y 和 CbCr 通道, 并增加 batch 维度
+                vi_y_img = vi_img_ycbcr[0:1].unsqueeze(0)
+                vi_cbcr_img = vi_img_ycbcr[1:3].unsqueeze(0)
             else: # 灰度模式
-                vi_y_img = img_read(str(vi_path), mode='L').unsqueeze(0)
+                vi_y_img = jt.array(np.array(img_read(str(vi_path), mode='L'))).unsqueeze(0).unsqueeze(0)
+                vi_y_img = vi_y_img.float() / 255.0
 
             # 确保尺寸为偶数
             _, _, h, w = ir_img.shape
@@ -112,7 +122,7 @@ if __name__ == "__main__":
     # 设置命令行参数
     parse = argparse.ArgumentParser()
     # 注意：我们这里使用之前测试生成的 .npz 权重
-    parse.add_argument('--ckpt_path', type=str, default='../pyTest/fuse_test/models/dummy_model_weights.npz')
+    parse.add_argument('--ckpt_path', type=str, default=f'models/{cfg.exp_name}.pkl')
     parse.add_argument('--ir_path', type=str, default='./ir_imgs/')
     parse.add_argument('--vi_path', type=str, default='./vi_imgs/')
     parse.add_argument('--out_dir', type=str, default=f'test_result/fuse_result/')
