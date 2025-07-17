@@ -3,7 +3,7 @@ dataset_name: RoadScene
 seed: 3407
 have_seg_label: False
 project_name: SFDFusion_compare
-exp_name: jittor_50epoch_sameweight
+exp_name: jittor_50epoch_sameweight_higher_ssim_fre
 resume: ~
 img_size: 320
 
@@ -21,7 +21,11 @@ lr_i: 5.0e-4
 lr_f: 0.1
 momentum: 0.937
 
+# loss hyper-parameters
 coeff_content: 1
 coeff_ssim: 1
 coeff_saliency: 10
 coeff_fre: 1
+
+# train
+device: "cuda"

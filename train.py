@@ -129,7 +129,7 @@ def train(cfg_path, wb_key, load_initial_weights=None):
             optimizer.backward(total_loss)
             
             # 步骤 2: 手动对计算出的梯度进行裁剪
-            optimizer.clip_grad_norm(max_norm=1.0, norm_type=2)
+            optimizer.clip_grad_norm(max_norm=5.0, norm_type=2)
             
             # 步骤 3: 优化器使用被裁剪后的梯度来更新权重
             optimizer.step()
