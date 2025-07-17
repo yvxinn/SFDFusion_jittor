@@ -1,7 +1,7 @@
 import jittor as jt
 import jittor.nn as nn
 import numpy as np
-from utils.fft_utils import jittor_irfftn_backward
+from utils.fft_utils import *
 
 
 def fft(input_real):
@@ -60,26 +60,22 @@ class Att_Block(nn.Module):
 class Sobelxy(nn.Module):
     def __init__(self, channels, kernel_size=3, padding=1, stride=1, dilation=1, groups=1):
         super(Sobelxy, self).__init__()
-        # 与loss.py中的Sobelxy保持一致，使用简单的单通道实现
-        # 与PyTorch版本完全一致的权重初始化
-        kernelx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
-        kernely = [[1, 2, 1], [0, 0, 0], [-1, -2, -1]]
-        
-        # 创建与PyTorch完全一致的权重形状 (1, 1, 3, 3)
-        kx = jt.array(kernelx, dtype=jt.float32).view(1, 1, 3, 3).stop_grad()
-        ky = jt.array(kernely, dtype=jt.float32).view(1, 1, 3, 3).stop_grad()
-        
-        self.weightx = kx
-        self.weighty = ky
+        # 与PyTorch版本完全一致的实现
+        sobel_filter = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]])
+        self.convx = nn.Conv2d(
+            channels, channels, kernel_size=kernel_size, padding=padding, stride=stride, dilation=dilation, groups=channels, bias=False
+        )
+        self.convx.weight.data = jt.array(sobel_filter).float().view(1, 1, 3, 3).repeat(channels, 1, 1, 1)
+        self.convy = nn.Conv2d(
+            channels, channels, kernel_size=kernel_size, padding=padding, stride=stride, dilation=dilation, groups=channels, bias=False
+        )
+        self.convy.weight.data = jt.array(sobel_filter.T).float().view(1, 1, 3, 3).repeat(channels, 1, 1, 1)
 
     def execute(self, x):
-        # 使用与PyTorch完全一致的卷积方式
-        # PyTorch: F.conv2d(x, self.weightx, padding=1)
-        # 这里x是(N, C, H, W)，weightx是(1, 1, 3, 3)
-        # 会自动广播到所有通道
-        sx = nn.conv2d(x, self.weightx, padding=1)
-        sy = nn.conv2d(x, self.weighty, padding=1)
-        return jt.abs(sx) + jt.abs(sy)
+        sobelx = self.convx(x)
+        sobely = self.convy(x)
+        x = jt.abs(sobelx) + jt.abs(sobely)
+        return x
 
 
 class DMRM(nn.Module):
@@ -141,7 +137,7 @@ class IFFT(nn.Module):
         half_spec = jt.stack([real_part, imag_part], dim=-1)
 
         # 2. 执行 IFFT
-        x_ifft = jittor_irfftn_backward(half_spec)
+        x_ifft = irfftn(half_spec)
 
         # 3. 取绝对值得到空间域特征
         x = jt.abs(x_ifft)

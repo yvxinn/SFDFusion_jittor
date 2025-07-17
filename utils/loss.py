@@ -6,12 +6,12 @@
 
 import jittor as jt
 from jittor import nn
-from .fft_utils import jittor_irfftn_backward
+from .fft_utils import irfftn
 
 class Sobelxy(jt.Module):
     """
     计算图像 x 和 y 方向上的 Sobel 梯度。
-    修复：与PyTorch版本完全一致，使用单通道卷积
+    修复：与PyTorch版本完全一致，使用Conv2d层
     """
     def __init__(self):
         super().__init__()
@@ -19,21 +19,19 @@ class Sobelxy(jt.Module):
         kernelx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
         kernely = [[1, 2, 1], [0, 0, 0], [-1, -2, -1]]
         
-        # 创建与PyTorch完全一致的权重形状 (1, 1, 3, 3)
-        kx = jt.array(kernelx, dtype=jt.float32).view(1, 1, 3, 3).stop_grad()
-        ky = jt.array(kernely, dtype=jt.float32).view(1, 1, 3, 3).stop_grad()
+        kernelx = jt.array(kernelx, dtype=jt.float32).unsqueeze(0).unsqueeze(0)
+        kernely = jt.array(kernely, dtype=jt.float32).unsqueeze(0).unsqueeze(0)
         
-        self.weightx = kx
-        self.weighty = ky
+        # 使用Parameter来存储权重，与PyTorch保持一致
+        self.weightx = kernelx.stop_grad()
+        self.weighty = kernely.stop_grad()
 
     def execute(self, x):
         # 使用与PyTorch完全一致的卷积方式
         # PyTorch: F.conv2d(x, self.weightx, padding=1)
-        # 这里x是(N, C, H, W)，weightx是(1, 1, 3, 3)
-        # 会自动广播到所有通道
-        sx = nn.conv2d(x, self.weightx, padding=1)
-        sy = nn.conv2d(x, self.weighty, padding=1)
-        return jt.add(jt.abs(sx), jt.abs(sy))
+        sobelx = nn.conv2d(x, self.weightx, padding=1)
+        sobely = nn.conv2d(x, self.weighty, padding=1)
+        return jt.abs(sobelx) + jt.abs(sobely)
 
 class PixelGradLoss(jt.Module):
     """
@@ -66,23 +64,22 @@ def cal_saliency_loss(fus, ir, vi, mask):
     return 5 * loss_tar + loss_back
 
 def cc(img1, img2):
-    """
-    相关系数函数。
-    迁移说明: 修正eps位置以与PyTorch版本完全一致。
-    """
-    # 使用与 PyTorch 等价的eps
-    eps = 1e-7 
-
+    eps = 1e-6  # 1. 稍微增大 epsilon
     N, C, H, W = img1.shape
     img1 = img1.reshape(N, C, -1)
     img2 = img2.reshape(N, C, -1)
     img1 = img1 - img1.mean(dim=-1, keepdims=True)
     img2 = img2 - img2.mean(dim=-1, keepdims=True)
-    num = jt.sum(img1 * img2, dim=-1)
-    den = jt.multiply(jt.sqrt(jt.sum(img1**2, dim=-1)), jt.sqrt(jt.sum(img2**2, dim=-1)))
     
-    # 修正：PyTorch版本是 eps + den，不是 den + eps
-    return jt.clamp(jt.divide(num, (eps + den)), -1.0, 1.0).mean()
+    num = jt.sum(img1 * img2, dim=-1)
+    
+    # 2. 在开方前确保值为正，并加上 eps
+    den1 = jt.sqrt(jt.sum(img1**2, dim=-1) + eps)
+    den2 = jt.sqrt(jt.sum(img2**2, dim=-1) + eps)
+    den = den1 * den2
+    
+    # 3. 在最终除法时，可以不再需要加 eps，因为 den 已经被保护了
+    return jt.clamp(num / den, -1.0, 1.0).mean()
 
 def cal_fre_loss(amp, pha, ir, vi, mask):
     """
@@ -94,7 +91,7 @@ def cal_fre_loss(amp, pha, ir, vi, mask):
     half_spec = jt.stack([real, imag], dim=-1)
     
     # 2. 调用重构的工具函数执行 IFFT
-    x_ifft = jittor_irfftn_backward(half_spec)
+    x_ifft = irfftn(half_spec)
 
     # 3. 取绝对值
     x_ifft_abs = jt.abs(x_ifft)

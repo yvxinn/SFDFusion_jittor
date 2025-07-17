@@ -39,7 +39,7 @@ class AverageMeter:
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
-    jt.seed(seed)
+    jt.misc.set_global_seed(seed)
     
     # 确保CUDA随机性的确定性（如果可用）
     if jt.compiler.has_cuda:
@@ -130,8 +130,8 @@ def train(cfg_path, wb_key, load_initial_weights=None):
 
         log_dict = {}
         loss_dict = {}
-        iter = tqdm(trainloader, total=len(trainloader), ncols=80)
-        for data_ir, data_vi, mask, _ in iter:
+        pbar = tqdm(trainloader, total=len(trainloader), ncols=80)
+        for data_ir, data_vi, mask, _ in pbar:
             fuse_net.train()
             
             fus_data, amp, pha = fuse_net(data_ir, data_vi)
@@ -161,8 +161,8 @@ def train(cfg_path, wb_key, load_initial_weights=None):
             saliency_loss_meter.update(saliency_loss.item())
             fre_loss_meter.update(fre_loss.item())
             # 设置进度条
-            iter.set_description(f'Epoch {epoch + 1}/{cfg.num_epochs}')
-            iter.set_postfix(loss_dict)
+            pbar.set_description(f'Epoch {epoch + 1}/{cfg.num_epochs}')
+            pbar.set_postfix(loss_dict)
 
         # Manually update learning rate
         lr_decay_factor = (1 - epoch / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
