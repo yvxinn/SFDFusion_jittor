@@ -18,9 +18,9 @@ import argparse
 import numpy as np
 import wandb
 
-# Helper classes implemented for Jittor
+# 为 Jittor 实现的 AverageMeter 辅助类
 class AverageMeter:
-    """Computes and stores the average and current value"""
+    """计算并存储平均值和当前值"""
     def __init__(self):
         self.reset()
 
@@ -41,9 +41,7 @@ def set_seed(seed):
     np.random.seed(seed)
     jt.misc.set_global_seed(seed)
     
-    # 确保CUDA随机性的确定性（如果可用）
     if jt.compiler.has_cuda:
-        # Jittor的确定性设置
         jt.flags.use_cuda = 1
 
 
@@ -53,11 +51,9 @@ def train(cfg_path, wb_key, load_initial_weights=None):
     set_seed(cfg.seed)
     log_f = '%(asctime)s | %(filename)s[line:%(lineno)d] | %(levelname)s | %(message)s'
     logging.basicConfig(level='INFO', format=log_f)
-    # wandb
-    wandb.login(key=wb_key)  # wandb api key
+    wandb.login(key=wb_key)
     runs = wandb.init(project=cfg.project_name, name=cfg.dataset_name + '_' + cfg.exp_name, config=cfg, mode=cfg.wandb_mode)
 
-    # Model
     if jt.compiler.has_cuda:
         jt.flags.use_cuda = 1
         logging.info("Jittor is using CUDA")
@@ -66,43 +62,34 @@ def train(cfg_path, wb_key, load_initial_weights=None):
         
     fuse_net = Fuse()
 
-    # --- 关键修改: 与 PyTorch 版本对齐 ---
-    # 移除参数分组，直接将所有参数传入优化器
-    # 明确设置所有Adam参数以确保与PyTorch一致
     optimizer = jt.optim.Adam(
         fuse_net.parameters(),
         lr=cfg.lr_i,
-        betas=(0.9, 0.999),  # PyTorch默认值
-        eps=1e-8,            # PyTorch默认值
-        weight_decay=0       # PyTorch默认值
+        betas=(0.9, 0.999),
+        eps=1e-8,
+        weight_decay=0
     )
-    # --- 修改结束 ---
-
-    # Jittor does not have LambdaLR, so we will update lr manually
-    # lr_func = lambda x: (1 - x / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
-    # scheduler = jt.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
 
     if load_initial_weights:
         if cfg.resume:
-            logging.warning(f"Both --load_initial_weights and resume are set. Prioritizing initial weights from {load_initial_weights}.")
-        logging.info(f"Loading initial weights from {load_initial_weights}...")
+            logging.warning(f"同时设置了 --load_initial_weights 和 resume。将优先使用 {load_initial_weights} 的初始权重。")
+        logging.info(f"正在从 {load_initial_weights} 加载初始权重...")
         try:
             import pickle
             with open(load_initial_weights, 'rb') as f:
                 initial_weights = pickle.load(f)
             fuse_net.load_state_dict(initial_weights)
-            logging.info("✅ Successfully loaded initial weights.")
+            logging.info("✅ 成功加载初始权重。")
         except Exception as e:
-            logging.error(f"Failed to load initial weights from {load_initial_weights}: {e}")
+            logging.error(f"从 {load_initial_weights} 加载初始权重失败: {e}")
             raise
     elif cfg.resume is not None:
-        logging.info(f'Resume from {cfg.resume}')
+        logging.info(f'从 {cfg.resume} 恢复训练')
         checkpoint = jt.load(cfg.resume)
         if isinstance(checkpoint, dict) and 'fuse_net' in checkpoint:
             fuse_net.load_state_dict(checkpoint['fuse_net'])
         else:
             fuse_net.load_state_dict(checkpoint)
-
 
     loss_ssim = SSIMLoss(window_size=11)
     loss_grad_pixel = PixelGradLoss()
@@ -114,14 +101,8 @@ def train(cfg_path, wb_key, load_initial_weights=None):
         train_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers
     )
 
-    '''
-    ------------------------------------------------------------------------------
-    Train
-    ------------------------------------------------------------------------------
-    '''
-    logging.info('Start training...')
+    logging.info('开始训练...')
     for epoch in range(cfg.start_epoch, cfg.num_epochs):
-        '''train'''
         total_loss_meter = AverageMeter()
         content_loss_meter = AverageMeter()
         ssim_loss_meter = AverageMeter()
@@ -135,23 +116,23 @@ def train(cfg_path, wb_key, load_initial_weights=None):
             fuse_net.train()
             
             fus_data, amp, pha = fuse_net(data_ir, data_vi)
-            # conten_loss
             content_loss = loss_grad_pixel(data_vi, data_ir, fus_data)
-
-            # SSIM-loss
             ssim_loss_v = loss_ssim(data_vi, fus_data)
             ssim_loss_i = loss_ssim(data_ir, fus_data)
             ssim_loss = ssim_loss_i + ssim_loss_v
-
-            # saliency_loss
             saliency_loss = cal_saliency_loss(fus_data, data_ir, data_vi, mask)
-
-            # fre_loss
             fre_loss = cal_fre_loss(amp, pha, data_ir, data_vi, mask)
-
             total_loss = cfg.coeff_content * content_loss + cfg.coeff_ssim * ssim_loss + cfg.coeff_saliency * saliency_loss + cfg.coeff_fre * fre_loss
 
-            optimizer.step(total_loss)
+            # 【【【最终正确版本 - 经过验证】】】
+            # 步骤 1: 优化器负责计算梯度
+            optimizer.backward(total_loss)
+            
+            # 步骤 2: 手动对计算出的梯度进行裁剪
+            optimizer.clip_grad_norm(max_norm=1.0, norm_type=2)
+            
+            # 步骤 3: 优化器使用被裁剪后的梯度来更新权重
+            optimizer.step()
 
             # loss dict
             loss_dict['total_loss'] = total_loss.item()
@@ -160,15 +141,12 @@ def train(cfg_path, wb_key, load_initial_weights=None):
             ssim_loss_meter.update(ssim_loss.item())
             saliency_loss_meter.update(saliency_loss.item())
             fre_loss_meter.update(fre_loss.item())
-            # 设置进度条
             pbar.set_description(f'Epoch {epoch + 1}/{cfg.num_epochs}')
             pbar.set_postfix(loss_dict)
 
-        # Manually update learning rate
         lr_decay_factor = (1 - epoch / cfg.num_epochs) * (1 - cfg.lr_f) + cfg.lr_f
         optimizer.lr = cfg.lr_i * lr_decay_factor
 
-        # 打印信息
         print('*' * 60 + '\tepoch finished!')
         logging.info(
             f'Epoch {epoch + 1}/{cfg.num_epochs}, lr:{optimizer.lr}, total_loss: {total_loss_meter.avg}, content_loss: {content_loss_meter.avg}, ssim_loss: {ssim_loss_meter.avg}, saliency_loss: {saliency_loss_meter.avg}, fre_loss: {fre_loss_meter.avg}'
@@ -182,15 +160,11 @@ def train(cfg_path, wb_key, load_initial_weights=None):
             'fre_loss': fre_loss_meter.avg,
             'lr': optimizer.lr,
         })
-
-        # update wandb
         runs.log(log_dict)
 
-        # 每隔几个epoch保存一次模型
         if (epoch + 1) % cfg.epoch_gap == 0:
             checkpoint = {'fuse_net': fuse_net.state_dict()}
-
-            logging.info(f'Save checkpoint to models/{cfg.exp_name}.pkl')
+            logging.info(f'保存检查点到 models/{cfg.exp_name}.pkl')
             save_path = os.path.join("models", f'{cfg.exp_name}.pkl')
             if not os.path.exists('models'):
                 os.makedirs('models')
@@ -204,5 +178,4 @@ if __name__ == "__main__":
     parser.add_argument('--load_initial_weights', type=str, default=None, help='Path to load initial weights from a Jittor-compatible .bin file.')
     args = parser.parse_args()
     train(args.cfg, args.auth, args.load_initial_weights)
-    # 运行命令行代码
     os.system(f'nohup python3 val.py &')
