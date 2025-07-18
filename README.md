@@ -1,25 +1,47 @@
-# SFDFusion
+# SFDFusion: Jittor Implementation
 
-Code of "SFDFusion: An Efficient Spatial-Frequency Domain Fusion Network for Infrared and Visible Image Fusion"
+## Jittor Migration Note
 
-Accepted by [ECAI 2024](https://www.ecai2024.eu/programme/accepted-papers)
+This project is an implementation of SFDFusion migrated from PyTorch to the Jittor deep learning framework. The migration focuses on leveraging Jittor's unique features, such as the Just-In-Time (JIT) compiler, while ensuring functional equivalence with the original PyTorch version. Key migration efforts include adapting the model architecture, data loading pipeline, and training loop to Jittor's specific API and execution model.
 
-paper link [[here]](https://ebooks.iospress.nl/doi/10.3233/FAIA240524)
+Original project link:
 
-![](./poster.jpg)
+[SFDFusion: An Efficient Spatial-Frequency Domain Fusion Network for Infrared and Visible Image Fusion](https://github.com/lqz2/SFDFusion)
+
+## Comparison
+
+### Result
+
+The following shows the small-scale fusion results using the RoadScene dataset, aiming to verify the consistency before and after migration.
+
+#### PyTorch
+
+![](./pytorch.jpg)
+
+#### Jittor
+
+![](./jittor.jpg)
+
+### Process
+
+![](./process.png)
 
 ## Environments
 
 ```
-python 3.10
-cuda 11.8
+python 3.8+
+cuda 11.x
+jittor
 ```
 
 ## Install
 
 ```
-conda create -n SFD python=3.10
-conda activate SFD
+conda create -n SFD_Jittor python=3.8
+conda activate SFD_Jittor
+# Install Jittor first
+python -m pip install jittor
+# Then install other dependencies
 pip install -r requirements.txt
 ```
 
